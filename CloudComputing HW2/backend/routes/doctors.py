@@ -1,5 +1,7 @@
 from flask import Blueprint, request, jsonify
 import json
+from flask_cors import cross_origin
+
 
 from backend.database import get_connection
 from backend.utils import (
@@ -11,7 +13,9 @@ from backend.utils import (
 
 doctors_bp = Blueprint("doctors", __name__)
 
+
 @doctors_bp.route("/doctors", methods=["GET"])
+@cross_origin()
 def get_all_doctors():
     try:
         conn = get_connection()

@@ -44,13 +44,23 @@ def get_all_appointments():
     finally:
         conn.close()
 
+import json
 
 @appointments_bp.route("/appointments", methods=["POST"])
 def create_appointment():
+    import json
+    conn = None
     try:
         data = request.get_json()
+
         if not data:
             return jsonify({"error": "invalid JSON"}), 400
+
+        if "appointment_time" in data:
+            data["appointment_time"] = data["appointment_time"].replace("T", " ")
+
+        if isinstance(data.get("notes"), str):
+            data["notes"] = [data["notes"]]
 
         required_fields = {"patient_id", "doctor_id", "appointment_time", "notes"}
         if not required_fields.issubset(data.keys()):
@@ -70,17 +80,14 @@ def create_appointment():
         conn = get_connection()
         cursor = conn.cursor()
 
-        # Verificăm existența pacientului
         cursor.execute("SELECT id FROM patients WHERE id = ?", (data["patient_id"],))
         if not cursor.fetchone():
             return jsonify({"error": "patient doesn't exist"}), 404
 
-        # Verificăm existența doctorului
         cursor.execute("SELECT id FROM doctors WHERE id = ?", (data["doctor_id"],))
         if not cursor.fetchone():
             return jsonify({"error": "doctor doesn't exist"}), 404
 
-        # Verificăm programările pentru doctor (±30 min)
         cursor.execute("""
             SELECT id FROM appointments
             WHERE doctor_id = ?
@@ -90,7 +97,6 @@ def create_appointment():
         if cursor.fetchone():
             return jsonify({"error": "doctor has another appointment at this time"}), 409
 
-        # Verificăm programările pentru pacient (±30 min)
         cursor.execute("""
             SELECT id FROM appointments
             WHERE patient_id = ?
@@ -107,10 +113,10 @@ def create_appointment():
             data["patient_id"],
             data["doctor_id"],
             data["appointment_time"],
-            data["notes"]
+            json.dumps(data["notes"])
         ))
-        conn.commit()
 
+        conn.commit()
         new_id = cursor.lastrowid
         data["id"] = new_id
         data["links"] = build_appointment_links(new_id)
@@ -120,33 +126,9 @@ def create_appointment():
     except Exception as e:
         return jsonify({"error": "internal server error", "details": str(e)}), 500
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
-@appointments_bp.route("/appointments/id/<int:appointment_id>", methods=["GET"])
-def get_appointment_by_id(appointment_id):
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,))
-        row = cursor.fetchone()
-
-        if row:
-            appointment = {
-                "id": row[0],
-                "patient_id": row[1],
-                "doctor_id": row[2],
-                "appointment_time": row[3],
-                "notes": row[4],
-                "links": build_appointment_links(row[0])
-            }
-            return jsonify(appointment), 200
-        else:
-            return jsonify({"error": "appointment not found"}), 404
-
-    except Exception as e:
-        return jsonify({"error": "internal server error", "details": str(e)}), 500
-    finally:
-        conn.close()
 
 
 @appointments_bp.route("/appointments/patient/<int:patient_id>", methods=["GET"])
@@ -233,7 +215,6 @@ def update_appointment(appointment_id):
         conn = get_connection()
         cursor = conn.cursor()
 
-        # verificăm dacă programarea există
         cursor.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,))
         existing_appointment = cursor.fetchone()
         if not existing_appointment:
@@ -247,7 +228,6 @@ def update_appointment(appointment_id):
         patient_changed = (data["patient_id"] != old_patient_id)
         time_changed = (data["appointment_time"] != old_datetime)
 
-        # verificăm existența entităților
         cursor.execute("SELECT id FROM patients WHERE id = ?", (data["patient_id"],))
         if not cursor.fetchone():
             return jsonify({"error": "patient doesn't exist"}), 404
@@ -256,7 +236,6 @@ def update_appointment(appointment_id):
         if not cursor.fetchone():
             return jsonify({"error": "doctor doesn't exist"}), 404
 
-        # Dacă s-a schimbat doctorul/pacientul/ora, verificăm conflict ±30 min
         if doctor_changed or patient_changed or time_changed:
             cursor.execute("""
                 SELECT id FROM appointments
@@ -288,7 +267,6 @@ def update_appointment(appointment_id):
             if cursor.fetchone():
                 return jsonify({"error": "patient has another appointment by this time"}), 409
 
-        # Facem update
         cursor.execute("""
             UPDATE appointments
             SET patient_id = ?, doctor_id = ?, appointment_time = ?, notes = ?
@@ -297,7 +275,7 @@ def update_appointment(appointment_id):
             data["patient_id"],
             data["doctor_id"],
             data["appointment_time"],
-            data["notes"],
+            json.dumps(data["notes"]),
             appointment_id
         ))
         conn.commit()

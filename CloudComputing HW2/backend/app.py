@@ -1,28 +1,17 @@
-
 from flask import Flask
-from database import init_db
-from routes.patients import patients_bp
-from routes.doctors import doctors_bp
-from routes.appointments import appointments_bp
+from flask_cors import CORS
 
-def create_app():
-    app = Flask(__name__)
+from backend.routes.doctors import doctors_bp
+from backend.routes.patients import patients_bp
+from backend.routes.appointments import appointments_bp
 
-    @app.route("/", methods=["GET"])
-    def home():
-        return {
-            "message": "API is running! Check /patients, /doctors, /appointments"
-        }, 200
+app = Flask(__name__)
 
-    app.register_blueprint(patients_bp)
-    app.register_blueprint(doctors_bp)
-    app.register_blueprint(appointments_bp)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-    return app
+app.register_blueprint(doctors_bp)
+app.register_blueprint(patients_bp)
+app.register_blueprint(appointments_bp)
 
 if __name__ == "__main__":
-    init_db()
-
-    app = create_app()
-    print("Flask server startingggg")
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    app.run(debug=True, host="0.0.0.0", port=8080)
